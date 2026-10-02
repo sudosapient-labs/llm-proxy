@@ -164,6 +164,7 @@ Full CLIProxyAPI management center with request-level monitoring and cost estima
 - Advanced (executors & translators): [docs/sdk-advanced.md](docs/sdk-advanced.md)
 - Access: [docs/sdk-access.md](docs/sdk-access.md)
 - Watcher: [docs/sdk-watcher.md](docs/sdk-watcher.md)
+- Quota observation and simulation: [docs/quota-forecast.md](docs/quota-forecast.md)
 - Custom Provider Example: `examples/custom-provider`
 
 ## Contributing

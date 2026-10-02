@@ -1,0 +1,116 @@
+{
+  "assumptions": {
+    "max_age_minutes": 30,
+    "minimum_runway_minutes": 20,
+    "activation_lead_minutes": 30,
+    "weekly_reserve": 0.05,
+    "weekly_units_per_unit": 0.1,
+    "activation_cost": 0.1,
+    "independent_accounts": false,
+    "first_use_starts_timer": false,
+    "demand": [
+      {
+        "minutes": 360,
+        "units_per_hour": 30
+      }
+    ]
+  },
+  "samples": [
+    {
+      "at": "2030-01-01T00:00:00Z",
+      "bound": "A",
+      "accounts": [
+        {
+          "id": "A",
+          "observed_at": "2030-01-01T00:00:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0.2,
+            "reset_at": "2030-01-01T04:00:00Z"
+          },
+          "weekly": {
+            "utilization": 0.3,
+            "reset_at": "2030-01-07T00:00:00Z"
+          }
+        },
+        {
+          "id": "B",
+          "observed_at": "2030-01-01T00:00:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0.1,
+            "reset_at": "2030-01-01T03:00:00Z"
+          },
+          "weekly": {
+            "utilization": 0.2,
+            "reset_at": "2030-01-06T00:00:00Z"
+          }
+        },
+        {
+          "id": "C",
+          "observed_at": "2030-01-01T00:00:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0,
+            "idle": true
+          },
+          "weekly": {
+            "utilization": 0.4,
+            "reset_at": "2030-01-05T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "at": "2030-01-01T00:10:00Z",
+      "bound": "A",
+      "accounts": [
+        {
+          "id": "A",
+          "observed_at": "2030-01-01T00:10:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0.25,
+            "reset_at": "2030-01-01T04:00:00Z"
+          },
+          "weekly": {
+            "utilization": 0.31,
+            "reset_at": "2030-01-07T00:00:00Z"
+          }
+        },
+        {
+          "id": "B",
+          "observed_at": "2030-01-01T00:10:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0.13,
+            "reset_at": "2030-01-01T03:00:00Z"
+          },
+          "weekly": {
+            "utilization": 0.20500000000000002,
+            "reset_at": "2030-01-06T00:00:00Z"
+          }
+        },
+        {
+          "id": "C",
+          "observed_at": "2030-01-01T00:10:00Z",
+          "healthy": true,
+          "priority": 0,
+          "five_hour": {
+            "utilization": 0,
+            "idle": true
+          },
+          "weekly": {
+            "utilization": 0.4,
+            "reset_at": "2030-01-05T00:00:00Z"
+          }
+        }
+      ]
+    }
+  ]
+}
