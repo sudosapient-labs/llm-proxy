@@ -113,6 +113,10 @@ func (s *Service) commitConfigUpdate(newCfg *config.Config) configCommit {
 		log.WithError(errValidate).Warn("rejected config update with invalid credential weights")
 		return configCommit{}
 	}
+	if errValidate := newCfg.QuotaForecast.Validate(); errValidate != nil {
+		log.WithError(errValidate).Warn("rejected config update with invalid quota forecasting settings")
+		return configCommit{}
+	}
 
 	s.cfgMu.Lock()
 	s.cfg = newCfg
@@ -200,6 +204,7 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
 		return false
 	}
 	s.syncPluginModelRuntime(registrationCtx)
+	s.applyQuotaForecastConfig(cfg)
 	return ctx.Err() == nil
 }
 

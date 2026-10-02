@@ -60,6 +60,17 @@ func TestMeasuredRatesAndIndependentWeeklyDepletion(t *testing.T) {
 	}
 }
 
+func TestUnobservedAccountHasMissingForecastWithoutFabricatedTimestamp(t *testing.T) {
+	o := observer(t, assumptions())
+	r := observe(t, o, Sample{At: epoch, Accounts: []Account{{ID: "A", Healthy: true}}})
+	if r.Forecasts[0].FiveHour.State != "missing" || r.Forecasts[0].Weekly.State != "missing" || r.Conversation.Account != "" {
+		t.Fatal("unobserved quota fabricated availability")
+	}
+	if _, err := o.Observe(Sample{At: epoch, Accounts: []Account{{ID: "A", FiveHour: window(.2, epoch.Add(time.Hour))}}}); err == nil {
+		t.Fatal("measured window accepted without observation timestamp")
+	}
+}
+
 func TestForecastDiscontinuities(t *testing.T) {
 	tests := []struct {
 		name    string

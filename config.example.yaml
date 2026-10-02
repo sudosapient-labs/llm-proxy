@@ -1069,6 +1069,32 @@ multimedia:
 
 # Application logs, request logs, usage aggregation, and profiling.
 observability:
+  # Optional integrated Claude quota collector and deterministic simulations.
+  # Disabled by default. Never changes routing or sends activation prompts.
+  # Map existing credential IDs privately; all values below are synthetic.
+  # quota-forecast:
+  #   enabled: true
+  #   interval: "1m" # 30s to 1h; one in-flight usage GET per account
+  #   model: "your-configured-claude-model"
+  #   accounts:
+  #     - {auth-id: "synthetic-credential-A", alias: "A"}
+  #     - {auth-id: "synthetic-credential-B", alias: "B"}
+  #     - {auth-id: "synthetic-credential-C", alias: "C"}
+  #   # Default: <auth-dir>/quota-forecast/observations.jsonl (private, rotated).
+  #   journal-size-mb: 10
+  #   journal-files: 3 # Total, including current file
+  #   assumptions:
+  #     max-age-minutes: 15
+  #     minimum-runway-minutes: 30
+  #     activation-lead-minutes: 30
+  #     weekly-reserve: 0.1
+  #     weekly-units-per-unit: 0.1
+  #     activation-cost: 0.1
+  #     independent-accounts: false # Unverified; only enables counterfactuals
+  #     first-use-starts-timer: false # Unverified; never sends a prompt
+  #     # Explicit whole-team scenario, not measured token counts.
+  #     demand: [{minutes: 360, units-per-hour: 30}]
+
   logs:
     # Enable debug logging
     debug: false

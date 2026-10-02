@@ -123,7 +123,10 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	// handlers no longer depend on legacy clients; pass nil slice initially
-	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
+	s.startQuotaForecast(ctx)
+	serverOptions := append([]api.ServerOption(nil), s.serverOptions...)
+	serverOptions = append(serverOptions, api.WithQuotaForecastSource(s.quotaForecastSnapshot))
+	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
 	s.syncPluginRuntimeConfig(ctx)
 	if homeEnabled {
 		s.syncPluginModelRuntime(ctx)
@@ -282,6 +285,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		s.homeLifecycleMu.Unlock()
 
 		// legacy refresh loop removed; only stopping core auth manager below
+		s.stopQuotaForecast()
 
 		if s.watcherCancel != nil {
 			s.watcherCancel()

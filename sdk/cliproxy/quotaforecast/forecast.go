@@ -37,22 +37,22 @@ type Sample struct {
 }
 
 type Demand struct {
-	Minutes      int     `json:"minutes"`
-	UnitsPerHour float64 `json:"units_per_hour"`
+	Minutes      int     `json:"minutes" yaml:"minutes"`
+	UnitsPerHour float64 `json:"units_per_hour" yaml:"units-per-hour"`
 }
 
 // Assumptions are scenario inputs, never inferred from token counts. One unit
 // consumes one percentage point of a five-hour budget on any account.
 type Assumptions struct {
-	MaxAgeMinutes         int      `json:"max_age_minutes"`
-	MinimumRunwayMinutes  int      `json:"minimum_runway_minutes"`
-	ActivationLeadMinutes int      `json:"activation_lead_minutes"`
-	WeeklyReserve         float64  `json:"weekly_reserve"`
-	WeeklyUnitsPerUnit    float64  `json:"weekly_units_per_unit"`
-	ActivationCost        float64  `json:"activation_cost"`
-	IndependentAccounts   bool     `json:"independent_accounts"`
-	FirstUseStartsTimer   bool     `json:"first_use_starts_timer"`
-	Demand                []Demand `json:"demand"`
+	MaxAgeMinutes         int      `json:"max_age_minutes" yaml:"max-age-minutes"`
+	MinimumRunwayMinutes  int      `json:"minimum_runway_minutes" yaml:"minimum-runway-minutes"`
+	ActivationLeadMinutes int      `json:"activation_lead_minutes" yaml:"activation-lead-minutes"`
+	WeeklyReserve         float64  `json:"weekly_reserve" yaml:"weekly-reserve"`
+	WeeklyUnitsPerUnit    float64  `json:"weekly_units_per_unit" yaml:"weekly-units-per-unit"`
+	ActivationCost        float64  `json:"activation_cost" yaml:"activation-cost"`
+	IndependentAccounts   bool     `json:"independent_accounts" yaml:"independent-accounts"`
+	FirstUseStartsTimer   bool     `json:"first_use_starts_timer" yaml:"first-use-starts-timer"`
+	Demand                []Demand `json:"demand" yaml:"demand"`
 }
 
 type Forecast struct {
@@ -177,17 +177,18 @@ func (o *Observer) Observe(s Sample) (Report, error) {
 			return Report{}, fmt.Errorf("account aliases must be unique, short alphanumeric labels")
 		}
 		seen[a.ID] = true
-		if a.ObservedAt.IsZero() || a.ObservedAt.After(s.At) {
+		missing := a.ObservedAt.IsZero() && a.FiveHour == nil && a.Weekly == nil
+		if (!missing && a.ObservedAt.IsZero()) || a.ObservedAt.After(s.At) {
 			return Report{}, fmt.Errorf("observation time must be nonzero and not in the future")
 		}
 		if !validWindow(a.FiveHour, false) || !validWindow(a.Weekly, true) {
 			return Report{}, fmt.Errorf("invalid window utilization or idle marker")
 		}
 		h := o.history[a.ID]
-		if a.ObservedAt.Before(h.latest.ObservedAt) {
+		if !missing && a.ObservedAt.Before(h.latest.ObservedAt) {
 			return Report{}, fmt.Errorf("out-of-order observation")
 		}
-		if a.ObservedAt.Equal(h.latest.ObservedAt) && (!equalWindow(a.FiveHour, h.latest.FiveHour) || !equalWindow(a.Weekly, h.latest.Weekly)) {
+		if !missing && a.ObservedAt.Equal(h.latest.ObservedAt) && (!equalWindow(a.FiveHour, h.latest.FiveHour) || !equalWindow(a.Weekly, h.latest.Weekly)) {
 			return Report{}, fmt.Errorf("conflicting observation at the same timestamp")
 		}
 	}

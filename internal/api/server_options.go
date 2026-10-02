@@ -9,6 +9,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/quotaobserver"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
@@ -27,6 +28,12 @@ type serverOptionConfig struct {
 	pluginHost            *pluginhost.Host
 	configReloadHook      func(context.Context, *config.Config)
 	exampleAPIKeySafeMode bool
+	quotaForecastSource   func(string, string) (quotaobserver.Status, error)
+}
+
+// WithQuotaForecastSource attaches the live observer to authenticated v8 management routes.
+func WithQuotaForecastSource(source func(string, string) (quotaobserver.Status, error)) ServerOption {
+	return func(cfg *serverOptionConfig) { cfg.quotaForecastSource = source }
 }
 
 // ServerOption customises HTTP server construction.
