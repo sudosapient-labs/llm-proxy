@@ -24,6 +24,7 @@ import (
 type responsesWebsocketForwardOptions struct {
 	preserveCompletionOutput func() bool
 	duplexStream             func() bool
+	telemetry                *responsesWebsocketTelemetry
 	toolCacheTurn            *responsesWebsocketToolCacheTurn
 	suppressError            func(*interfaces.ErrorMessage) bool
 	keepAliveInterval        *time.Duration
@@ -122,6 +123,7 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 				if opts.duplexStream != nil && opts.duplexStream() {
 					// A duplex stream ends with its socket, not an individual response.
 					// The data channel may close before select observes its final error.
+					opts.telemetry.closed(c, errs)
 					_, errClose := writer.closeWithoutError()
 					cancel(nil)
 					if errClose != nil {
@@ -152,6 +154,9 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 
 			payloads := websocketJSONPayloadsFromChunk(chunk)
 			for i := range payloads {
+				if opts.duplexStream != nil && opts.duplexStream() {
+					opts.telemetry.beforePayload(c, payloads[i])
+				}
 				if gjson.GetBytes(payloads[i], "type").String() == "response.created" {
 					responseStarted = true
 					completed = false
@@ -227,6 +232,9 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 					)
 					cancel(errWrite)
 					return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), nil, errWrite
+				}
+				if opts.duplexStream != nil && opts.duplexStream() {
+					opts.telemetry.afterPayload(c, payloads[i])
 				}
 			}
 		}

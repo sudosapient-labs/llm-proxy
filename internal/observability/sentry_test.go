@@ -388,3 +388,25 @@ func TestExpectedPreflightRejectionsDoNotCreateIssues(t *testing.T) {
 		}
 	}
 }
+
+func TestNextRequestKeepsUnsampledMetricsIndependent(t *testing.T) {
+	m := &memoryTransport{}
+	r := testRuntime(t, 0, m, 32)
+	ctx, first := r.Begin(context.Background(), "/v1/responses", "WS", "request-id", "")
+	ConfigureRequest(ctx, "test-model", true)
+	_, attempt := BeginAttempt(ctx, "codex", "test-model")
+	attempt.Finish(nil, 200)
+	first.Finish(200, false)
+	ctx, second := first.Next(context.Background())
+	if FromContext(ctx) != second || second == first || second.attempts != 0 || second.provider != "codex" {
+		t.Fatal("successor reused previous request state or lost provider")
+	}
+	second.Finish(200, false)
+	flush(t, r)
+	if transaction(m.snapshot()) != nil || len(metrics(m.snapshot(), "llm.requests")) != 2 || len(metrics(m.snapshot(), "llm.streams")) != 2 {
+		t.Fatal("unsampled successor accounting incorrect")
+	}
+	if r.active.Load() != 0 {
+		t.Fatal("successor left an active stream")
+	}
+}

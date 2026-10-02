@@ -25,6 +25,7 @@ import (
 func TestResponsesSteeringFullDuplexIntegration(t *testing.T) {
 	for _, scenario := range []string{"successor", "tool_pending", "disconnect_accepted", "disconnect_pending"} {
 		t.Run(scenario, func(t *testing.T) {
+			telemetry := captureWebsocketTelemetry(t)
 			var connections atomic.Int32
 			done := make(chan struct{})
 			control1 := []byte(`{"type":"response.steer","previous_response_id":"r1","input":"one"}`)
@@ -100,7 +101,11 @@ func TestResponsesSteeringFullDuplexIntegration(t *testing.T) {
 			defer registry.GetGlobalRegistry().UnregisterClient(authID)
 			h := NewOpenAIResponsesAPIHandler(handlers.NewBaseAPIHandlers(&cfg.SDKConfig, manager))
 			router := gin.New()
-			router.GET("/v1/responses", h.ResponsesWebsocket)
+			handlerDone := make(chan struct{})
+			router.GET("/v1/responses", func(c *gin.Context) {
+				defer close(handlerDone)
+				h.ResponsesWebsocket(c)
+			})
 			downstream := httptest.NewServer(router)
 			defer downstream.Close()
 			c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(downstream.URL, "http")+"/v1/responses", nil)
@@ -160,6 +165,21 @@ func TestResponsesSteeringFullDuplexIntegration(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("connection cleanup stalled")
 			}
+			select {
+			case <-handlerDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("downstream handler did not finish")
+			}
+			want := []string{"success", "success"}
+			switch scenario {
+			case "successor":
+				want = []string{"cancelled", "success"}
+			case "disconnect_accepted":
+				want = []string{"upstream_5xx"}
+			case "disconnect_pending":
+				want = []string{"success"}
+			}
+			assertWebsocketTelemetryOutcomes(t, telemetry(), want)
 			if connections.Load() != 1 {
 				t.Fatalf("unexpected reconnect/replay: %d", connections.Load())
 			}

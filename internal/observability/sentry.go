@@ -227,6 +227,23 @@ func (r *Runtime) Begin(ctx context.Context, route, method, requestID, trace str
 	return r.begin(ctx, route, method, requestID, trace)
 }
 
+// Next starts a subsequent logical response on the same duplex connection.
+// The parent must be the connection context before telemetry was attached, so
+// the SDK cannot reuse the previous, already-finished transaction. Only trusted
+// dimensions are inherited; attempts, timing and outcomes belong to each turn.
+func (s *Request) Next(parent context.Context) (context.Context, *Request) {
+	if s == nil {
+		return parent, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	requestID, _ := s.span.Data["request_id"].(string)
+	ctx, next := s.r.begin(parent, s.span.Tags["route"], s.span.Tags["method"], requestID, s.span.ToSentryTrace())
+	next.provider, next.requested, next.served = s.provider, s.requested, s.served
+	ConfigureRequest(ctx, s.requested, s.stream)
+	return ctx, next
+}
+
 func ConfigureRequest(ctx context.Context, model string, stream bool) {
 	s := FromContext(ctx)
 	if s == nil {

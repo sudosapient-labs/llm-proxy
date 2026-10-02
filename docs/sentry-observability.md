@@ -109,8 +109,20 @@ are absent, never synthesized as zero.
 HTTP instrumentation covers POST inference routes in `/v1`, `/v1beta`,
 `/openai/v1`, and `/backend-api/codex`, including Gemini action paths and SSE.
 Model listing, health, management and WebSocket handshakes are excluded.
-The Responses WebSocket handler traces each accepted inference turn, not the
-socket lifetime; malformed/rejected messages before execution are not counted.
+The Responses WebSocket handler traces individual inference turns. In Codex
+full-duplex mode, the initial turn starts before execution; subsequent turns
+start when `response.created` reaches the downstream forwarder. These later
+latency/TTFT observations exclude time queued before that event. Each turn ends
+after its terminal event is forwarded; disconnecting an idle socket does not
+reclassify completed turns or add a request. A `response.incomplete` with reason
+`steered` counts as cancellation; other incomplete responses are normal terminal
+completions. Server-sent closes that accompany upstream errors preserve the
+upstream category and status. Malformed/rejected messages before execution and
+queued creates rejected before `response.created` are not counted as new turns.
+Duplex upstream attempt metrics still cover the executor invocation/connection,
+not each response. An unfinished connection attempt span is not included in an
+already-finalized turn transaction; subsequent turn transactions inherit trusted
+provider/model dimensions but do not invent new executor attempts.
 Core outbound Codex WebSocket execution is included in upstream stream attempts.
 AI Studio/wsrelay ingress frames, Amp reverse-proxy inference, direct SDK calls
 without an inbound telemetry context, and alternate plugin-owned executions do
