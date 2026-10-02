@@ -119,3 +119,57 @@ func TestUpcomingDemandWithinLeadTriggersComparison(t *testing.T) {
 		t.Fatal("quiet first minute hid depletion during the configured lead time")
 	}
 }
+
+func TestActivationLeadAccountsForScheduledResets(t *testing.T) {
+	tests := []struct {
+		name        string
+		weekly      bool
+		resetAfter  time.Duration
+		demand      float64
+		measured    bool
+		wantCompare bool
+	}{
+		{"five-hour reset before depletion", false, time.Minute, 60, false, false},
+		{"weekly reset before depletion", true, time.Minute, 60, false, false},
+		{"five-hour depletion before reset", false, 10 * time.Minute, 60, false, true},
+		{"weekly depletion before reset", true, 10 * time.Minute, 60, false, true},
+		{"five-hour reset at depletion", false, 5 * time.Minute, 60, false, false},
+		{"weekly reset at depletion", true, 5 * time.Minute, 60, false, false},
+		{"fractional reset rounds up", false, 5*time.Minute + 30*time.Second, 60, false, true},
+		{"depletion after replenishment", false, time.Minute, 240, false, true},
+		{"measured five-hour burn resets first", false, time.Minute, 0, true, false},
+		{"measured weekly burn resets first", true, time.Minute, 0, true, false},
+		{"measured five-hour burn depletes first", false, 10 * time.Minute, 0, true, true},
+		{"measured weekly burn depletes first", true, 10 * time.Minute, 0, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := assumptions()
+			a.Demand = []Demand{{Minutes: 320, UnitsPerHour: tt.demand}}
+			o := observer(t, a)
+			active := account("A", .1, .1)
+			w := active.FiveHour
+			used, previousUsed := .95, .94 // Five minutes at 60 units/hour.
+			if tt.weekly {
+				w = active.Weekly
+				used, previousUsed = .995, .994
+			}
+			w.Utilization = ptr(used)
+			w.ResetAt = epoch.Add(tt.resetAfter)
+			if tt.measured {
+				active.ObservedAt = epoch.Add(-time.Minute)
+				w.Utilization = ptr(previousUsed)
+				observe(t, o, Sample{At: active.ObservedAt, Accounts: []Account{active}})
+				active.ObservedAt = epoch
+				w.Utilization = ptr(used)
+			}
+			r := observe(t, o, Sample{At: epoch, Accounts: []Account{active, idle("B", .1)}, Bound: "A"})
+			if got := len(r.Comparisons) > 0; got != tt.wantCompare {
+				t.Fatalf("comparison = %v, want %v: %+v", got, tt.wantCompare, r.Activation)
+			}
+			if !tt.wantCompare && r.Activation.Account != "" {
+				t.Fatalf("activation despite reset postponing depletion: %+v", r.Activation)
+			}
+		})
+	}
+}

@@ -101,6 +101,7 @@ decrease, or missing data breaks the estimate until a new comparable pair exists
 Duplicate polls do not add history. Conflicting values at the same observation
 time, out-of-order input, future measurements, or malformed normalized input
 reject the whole sample without partially updating history.
+Equivalent timezone representations of the same reset instant are not conflicts.
 
 Positive burn gives `(1 - utilization) / burn`, adjusted for elapsed time since
 the observation. Zero burn has no finite depletion estimate; it is not a promise
@@ -154,8 +155,11 @@ account; weekly consumption uses the supplied conversion. Successful token
 counts are not treated as quota units. Demand is an explicit whole-team workload
 scenario, not a fitted historical workload. The example's numbers are invented.
 
-The activation lead check considers demand segments throughout the lead window
-and measured burn, so a quiet first segment does not hide an approaching peak.
+The activation lead check projects both quota windows through their scheduled
+resets, using the larger of measured burn and assumed demand in each minute.
+A quiet first segment does not hide an approaching peak. A reset that prevents
+depletion suppresses activation unless a limit depletes later within the lead
+window; exhaustion exactly at a reset does not trigger activation.
 The simulation uses one-minute steps and rounds reset times **up** to a step
 boundary. It starts both policies from the same projected current quota and
 actual future reset timestamps. After five-hour resets, it assumes an idle

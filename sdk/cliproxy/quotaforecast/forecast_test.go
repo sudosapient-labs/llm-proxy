@@ -2,6 +2,7 @@ package quotaforecast
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
@@ -107,6 +108,47 @@ func TestRepeatedPollsDoNotRefreshObservationOrLoseRate(t *testing.T) {
 	r = observe(t, o, Sample{At: epoch.Add(41 * time.Minute), Accounts: []Account{a}})
 	if r.Forecasts[0].FiveHour.State != "stale" || r.Conversation.Account != "" || !strings.Contains(r.Activation.Reason, "stale") {
 		t.Fatalf("stale snapshot reused: %+v", r)
+	}
+}
+
+func TestRepeatedObservationComparesWindowValues(t *testing.T) {
+	for _, weekly := range []bool{false, true} {
+		for _, tt := range []struct {
+			name    string
+			change  func(*Window)
+			wantErr bool
+		}{
+			{"equivalent timezone", func(w *Window) { w.ResetAt = w.ResetAt.In(time.FixedZone("offset", -5*60*60)) }, false},
+			{"different reset", func(w *Window) { w.ResetAt = w.ResetAt.Add(time.Second) }, true},
+			{"different utilization", func(w *Window) { w.Utilization = ptr(.4) }, true},
+			{"missing utilization", func(w *Window) { w.Utilization = nil }, true},
+		} {
+			t.Run(fmt.Sprintf("weekly=%v/%s", weekly, tt.name), func(t *testing.T) {
+				o := observer(t, assumptions())
+				a := account("A", .2, .3)
+				observe(t, o, Sample{At: epoch, Accounts: []Account{a}})
+				a.ObservedAt = epoch.Add(time.Minute)
+				a.FiveHour.Utilization = ptr(.21)
+				a.Weekly.Utilization = ptr(.31)
+				first := observe(t, o, Sample{At: a.ObservedAt, Accounts: []Account{a}})
+				w := a.FiveHour
+				if weekly {
+					w = a.Weekly
+				}
+				tt.change(w)
+				r, err := o.Observe(Sample{At: epoch.Add(2 * time.Minute), Accounts: []Account{a}})
+				if (err != nil) != tt.wantErr {
+					t.Fatalf("error = %v, want error = %v", err, tt.wantErr)
+				}
+				if err == nil {
+					closeTo(t, *r.Forecasts[0].FiveHour.BurnPerHour, *first.Forecasts[0].FiveHour.BurnPerHour)
+					closeTo(t, *r.Forecasts[0].Weekly.BurnPerHour, *first.Forecasts[0].Weekly.BurnPerHour)
+					if !o.history["A"].previous.ObservedAt.Equal(epoch) {
+						t.Fatal("equivalent repeated observation advanced history")
+					}
+				}
+			})
+		}
 	}
 }
 

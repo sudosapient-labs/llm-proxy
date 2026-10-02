@@ -5,7 +5,6 @@ package quotaforecast
 import (
 	"fmt"
 	"math"
-	"reflect"
 	"regexp"
 	"sort"
 	"time"
@@ -137,6 +136,18 @@ func validWindow(w *Window, weekly bool) bool {
 	}
 	return !w.Idle || (!weekly && w.ResetAt.IsZero() && w.Utilization != nil && *w.Utilization == 0)
 }
+func equalWindow(a, b *Window) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Idle != b.Idle || !a.ResetAt.Equal(b.ResetAt) {
+		return false
+	}
+	if a.Utilization == nil || b.Utilization == nil {
+		return a.Utilization == b.Utilization
+	}
+	return *a.Utilization == *b.Utilization
+}
 func copyWindow(w *Window) *Window {
 	if w == nil {
 		return nil
@@ -176,7 +187,7 @@ func (o *Observer) Observe(s Sample) (Report, error) {
 		if a.ObservedAt.Before(h.latest.ObservedAt) {
 			return Report{}, fmt.Errorf("out-of-order observation")
 		}
-		if a.ObservedAt.Equal(h.latest.ObservedAt) && (!reflect.DeepEqual(a.FiveHour, h.latest.FiveHour) || !reflect.DeepEqual(a.Weekly, h.latest.Weekly)) {
+		if a.ObservedAt.Equal(h.latest.ObservedAt) && (!equalWindow(a.FiveHour, h.latest.FiveHour) || !equalWindow(a.Weekly, h.latest.Weekly)) {
 			return Report{}, fmt.Errorf("conflicting observation at the same timestamp")
 		}
 	}
