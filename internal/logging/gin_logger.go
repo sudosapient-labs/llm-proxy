@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
@@ -47,11 +48,19 @@ func GinLogrusLogger() gin.HandlerFunc {
 		// Only generate request ID for AI API paths
 		var requestID string
 		if isAIAPIPath(path) {
-			generatedID, errGenerate := GenerateRequestID()
-			if errGenerate != nil {
-				log.WithError(errGenerate).Error("failed to generate request ID")
-			} else {
-				requestID = generatedID
+			requestID = GetRequestID(c.Request.Context())
+			if requestID == "" {
+				requestID = GetGinRequestID(c)
+			}
+			if requestID == "" {
+				generatedID, errGenerate := GenerateRequestID()
+				if errGenerate != nil {
+					log.WithError(errGenerate).Error("failed to generate request ID")
+				} else {
+					requestID = generatedID
+				}
+			}
+			if requestID != "" {
 				SetGinRequestID(c, requestID)
 				ctx := WithRequestID(c.Request.Context(), requestID)
 				c.Request = c.Request.WithContext(ctx)
@@ -133,6 +142,7 @@ func GinLogrusRecovery() gin.HandlerFunc {
 			panic(http.ErrAbortHandler)
 		}
 
+		observability.Panic(sentryRequestContext(c))
 		log.WithFields(log.Fields{
 			"panic": recovered,
 			"stack": string(debug.Stack()),

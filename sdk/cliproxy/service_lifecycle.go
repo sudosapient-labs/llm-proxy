@@ -9,6 +9,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
@@ -50,6 +51,11 @@ func (s *Service) Run(ctx context.Context) error {
 	}()
 
 	usage.StartDefault(ctx)
+	if s.cfg != nil {
+		if errSentry := observability.Start(s.cfg.Sentry); errSentry != nil {
+			log.Warn(errSentry.Error())
+		}
+	}
 	homeEnabled := s.cfg != nil && s.cfg.Home.Enabled
 	if homeEnabled {
 		forceHomeRuntimeConfig(s.cfg)
@@ -352,6 +358,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		}
 
 		usage.StopDefault()
+		if !observability.Shutdown(ctx) {
+			log.Warn("Sentry shutdown flush incomplete; telemetry may have been dropped")
+		}
 	})
 	return shutdownErr
 }

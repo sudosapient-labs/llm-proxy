@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	"golang.org/x/net/context"
@@ -117,6 +120,7 @@ type requestLifecycleTracker struct {
 }
 
 func (h *BaseAPIHandler) newRequestLifecycleTracker(ctx context.Context, sourceFormat, model, requestedModel string, stream bool, metadata map[string]any, skipPluginID string) *requestLifecycleTracker {
+	observability.ConfigureRequest(ctx, requestedModel, stream)
 	requestID := uuid.NewString()
 	traceID := logging.GetRequestID(ctx)
 	return &requestLifecycleTracker{
@@ -148,6 +152,7 @@ func (t *requestLifecycleTracker) complete(outcome pluginapi.RequestCompletionOu
 		return
 	}
 	t.once.Do(func() {
+		observeCompletion(t.ctx, outcome, statusCode, err)
 		completion := t.completion
 		completion.Outcome = outcome
 		completion.StatusCode = statusCode
@@ -165,6 +170,26 @@ func (t *requestLifecycleTracker) complete(outcome pluginapi.RequestCompletionOu
 			host.CompleteRequest(t.ctx, completion)
 		}
 	})
+}
+
+// Stream forwarders call this before closing their channels. Plugin completion
+// retains its existing ordering and cannot race the HTTP telemetry finalizer.
+func observeCompletion(ctx context.Context, outcome pluginapi.RequestCompletionOutcome, status int, err error) {
+	if outcome == pluginapi.RequestCompletionRejected {
+		// Intentional interceptor rejections are request faults, not internal
+		// exceptions, even when the interceptor chooses HTTP 200 for its reply.
+		observability.Outcome(ctx, nil, http.StatusBadRequest)
+		return
+	}
+	if outcome == pluginapi.RequestCompletionCanceled {
+		observability.Outcome(ctx, context.Canceled, 0)
+		return
+	}
+	observability.Outcome(ctx, err, status)
+	var authErr *coreauth.Error
+	if errors.As(err, &authErr) && (authErr.Code == "auth_not_found" || authErr.Code == "auth_unavailable") {
+		observability.CredentialExhausted(ctx)
+	}
 }
 
 func (t *requestLifecycleTracker) completeError(ctx context.Context, msg *interfaces.ErrorMessage) {

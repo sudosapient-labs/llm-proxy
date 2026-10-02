@@ -3961,6 +3961,7 @@ func TestResponsesWebsocketRejectsUnknownPreviousResponseOnNewSocket(t *testing.
 
 func TestResponsesWebsocketClosesAfterNonRetryableClientError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	telemetry := captureWebsocketTelemetry(t)
 
 	modelName := "xai-websocket-rollback-model"
 	executor := &websocketCanonicalRollbackExecutor{}
@@ -3982,7 +3983,11 @@ func TestResponsesWebsocketClosesAfterNonRetryableClientError(t *testing.T) {
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
 	router := gin.New()
-	router.GET("/v1/responses/ws", h.ResponsesWebsocket)
+	handlerDone := make(chan struct{})
+	router.GET("/v1/responses/ws", func(c *gin.Context) {
+		defer close(handlerDone)
+		h.ResponsesWebsocket(c)
+	})
 
 	server := httptest.NewServer(router)
 	defer server.Close()
@@ -4024,6 +4029,13 @@ func TestResponsesWebsocketClosesAfterNonRetryableClientError(t *testing.T) {
 	if got := len(executor.Payloads()); got != 2 {
 		t.Fatalf("executor payload count = %d, want 2", got)
 	}
+	select {
+	case <-handlerDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("downstream handler did not finish")
+	}
+	assertWebsocketTelemetryOutcomes(t, telemetry(), []string{"success", "request_error"})
+
 }
 
 // itemNotPersistedUpstreamMessage is the verbatim upstream 404 text raised when a

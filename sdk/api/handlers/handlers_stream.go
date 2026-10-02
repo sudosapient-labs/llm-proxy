@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
@@ -164,6 +165,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
 		}()
 		defer close(dataChan)
 		defer close(errChan)
+		defer func() { observeCompletion(ctx, completionOutcome, completionStatus, completionErr) }()
 		chunkIndex := 0
 		var historyChunks [][]byte
 		for {
@@ -182,6 +184,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
 						completionOutcome = pluginapi.RequestCompletionFailed
 						completionStatus = http.StatusBadGateway
 						completionErr = errValidate
+						observeCompletion(ctx, completionOutcome, completionStatus, completionErr)
 						select {
 						case errChan <- &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errValidate}:
 						case <-done:
@@ -200,6 +203,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
 				completionOutcome = pluginapi.RequestCompletionFailed
 				completionStatus = errMsg.StatusCode
 				completionErr = chunk.Err
+				observeCompletion(ctx, completionOutcome, completionStatus, completionErr)
 				select {
 				case errChan <- errMsg:
 				case <-done:
@@ -256,6 +260,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
 					completionOutcome = pluginapi.RequestCompletionFailed
 					completionStatus = http.StatusBadGateway
 					completionErr = errValidate
+					observeCompletion(ctx, completionOutcome, completionStatus, completionErr)
 					select {
 					case errChan <- &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errValidate}:
 					case <-done:
@@ -295,6 +300,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManager(ctx context.Context, handl
 }
 
 func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context, entryProtocol, exitProtocol, modelName string, rawJSON []byte, alt string, allowImageModel bool, execOptions modelExecutionOptions) (<-chan []byte, http.Header, <-chan *interfaces.ErrorMessage) {
+	observability.ConfigureRequest(ctx, modelName, true)
 	originalRequestedModel := modelName
 	routeDecision, preparedRoute := preparedModelRouteFromContext(ctx, execOptions.SkipRouterPluginID)
 	if !preparedRoute {
@@ -613,6 +619,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 		}()
 		defer close(dataChan)
 		defer close(errChan)
+		defer func() { observeCompletion(ctx, completionOutcome, completionStatus, completionErr) }()
 		if streamCanceledBeforeRead {
 			completionOutcome = pluginapi.RequestCompletionCanceled
 			completionStatus = 0
@@ -623,6 +630,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 		}
 
 		sendErr := func(msg *interfaces.ErrorMessage) bool {
+			observeCompletion(ctx, completionOutcome, completionStatus, completionErr)
 			if ctx == nil {
 				errChan <- msg
 				return true

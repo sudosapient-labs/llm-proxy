@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -26,6 +27,7 @@ import (
 )
 
 type UsageReporter struct {
+	telemetryContext    context.Context
 	requestID           string
 	traceID             string
 	provider            string
@@ -53,6 +55,7 @@ type UsageReporter struct {
 	firstPacketSet      bool
 	ttftStart           time.Time
 	ttftSet             bool
+	ttftIsToken         bool
 	once                sync.Once
 
 	responseModelMu sync.RWMutex
@@ -130,6 +133,9 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		serviceTier:     usage.ServiceTierFromContext(ctx),
 		generate:        usage.GenerateFromContext(ctx),
 		stream:          usage.StreamFromContext(ctx),
+	}
+	if observability.Enabled() {
+		reporter.telemetryContext = ctx
 	}
 	if auth != nil {
 		reporter.authID = auth.ID
@@ -486,9 +492,12 @@ func (r *UsageReporter) ObserveTokenEvent(isToken bool) {
 	if !r.firstPacketSet {
 		r.firstPacketDuration = time.Since(start)
 		r.firstPacketSet = true
+		observability.FirstResponse(r.telemetryContext, start.Add(r.firstPacketDuration), "first_byte")
 	}
 	if isToken {
 		r.ttft = time.Since(start)
+		r.ttftIsToken = true
+		observability.FirstResponse(r.telemetryContext, start.Add(r.ttft), "token")
 		r.ttftSet = true
 		r.ttftStart = time.Time{}
 	}
@@ -592,6 +601,24 @@ func (r *UsageReporter) publishAttemptRecord(ctx context.Context, record usage.R
 }
 
 func (r *UsageReporter) publishRecord(ctx context.Context, record usage.Record) {
+	if observability.Enabled() {
+		b := record.Detail.TokenBreakdown
+		buckets := map[string]int64{}
+		if b.Valid() {
+			buckets = map[string]int64{"input_uncached": b.Input.UncachedTokens, "input_cache_read": b.Input.CacheReadTokens, "input_cache_write": b.Input.CacheWriteTokens, "output_non_reasoning": b.Output.NonReasoningTokens, "output_reasoning": b.Output.ReasoningTokens, "unclassified": b.UnclassifiedTokens}
+		} else if record.Detail.TotalTokens > 0 {
+			buckets["unclassified"] = record.Detail.TotalTokens
+		}
+		timingKind := "first_byte"
+		if r != nil {
+			r.ttftMu.RLock()
+			if r.ttftIsToken {
+				timingKind = "token"
+			}
+			r.ttftMu.RUnlock()
+		}
+		observability.Usage(ctx, record.Provider, record.Model, record.ResponseModel, record.RequestedAt, record.TTFT, timingKind, buckets)
+	}
 	record.ResponseHeaders = internallogging.GetResponseHeaders(ctx)
 	usage.PublishRecord(ctx, record)
 }
@@ -711,6 +738,7 @@ func (r *UsageReporter) setTTFT(ttft time.Duration) {
 		return
 	}
 	r.ttft = ttft
+	observability.FirstResponse(r.telemetryContext, time.Now(), "first_byte")
 	r.ttftSet = true
 	r.ttftStart = time.Time{}
 	r.ttftMu.Unlock()
@@ -741,6 +769,9 @@ func (t usageTTFTRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	cliproxyexecutor.MarkUpstreamAttempt(req.Context())
 	t.reporter.StartResponseTTFT()
 	resp, errRoundTrip := t.base.RoundTrip(req)
+	if resp != nil {
+		observability.UpstreamStatus(t.reporter.telemetryContext, resp.StatusCode)
+	}
 	if errRoundTrip != nil {
 		return resp, errRoundTrip
 	}

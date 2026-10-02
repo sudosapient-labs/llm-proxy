@@ -607,7 +607,7 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
 	}
 
 	base := auth.Clone()
-	updated, err := exec.Refresh(ctx, base.Clone())
+	updated, err := refreshObserved(ctx, exec, base.Clone())
 	if err != nil && errors.Is(err, context.Canceled) {
 		log.Debugf("refresh canceled for %s, %s", auth.Provider, auth.ID)
 		return nil, err

@@ -1069,6 +1069,18 @@ multimedia:
 
 # Application logs, request logs, usage aggregation, and profiling.
 observability:
+  # Optional Sentry telemetry. All settings are startup-only (restart to change).
+  sentry:
+    enabled: false
+    dsn: "" # Falls back to SENTRY_DSN only when enabled.
+    environment: "" # Falls back to SENTRY_ENVIRONMENT.
+    release: "" # SENTRY_RELEASE, then build version + commit.
+    instance: "" # Defaults to hostname; do not put secrets here.
+    traces-sample-rate: 0.1 # 0 disables trace export, not Application Metrics.
+    queue-size: 256 # Bounded event/batch queue; overflow drops telemetry.
+    # Explicit bounded allowlists. All unlisted names become "other".
+    providers: [codex, claude, gemini, antigravity, openai-compatibility, xai, meta, kimi, devin, aistudio, vertex]
+    models: [] # Populate with trusted, operational model names (max 256).
   logs:
     # Enable debug logging
     debug: false

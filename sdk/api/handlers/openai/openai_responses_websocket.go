@@ -689,6 +689,8 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		codexDuplexStream.Store(false)
 		pinnedAuthAttempted := false
 		cliCtx, cliCancel := h.GetContextWithCancel(h, c, executionParent)
+		telemetry := newResponsesWebsocketTelemetry(c, cliCtx, modelName)
+		cliCtx = telemetry.ctx
 		cliCtx = cliproxyexecutor.WithDownstreamWebsocket(cliCtx)
 		if duplexInput != nil {
 			cliCtx = cliproxyexecutor.WithWebsocketInput(cliCtx, duplexInput)
@@ -754,10 +756,12 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 			responsesWebsocketForwardOptions{
 				preserveCompletionOutput: preserveNativeOutput.Load,
 				duplexStream:             codexDuplexStream.Load,
+				telemetry:                telemetry,
 				toolCacheTurn:            toolCacheTurn,
 				suppressError:            replayPinnedAuthFailure,
 			},
 		)
+		telemetry.finish(c, forwardErrMsg, errForward)
 		if errForward != nil {
 			wsTerminateErr = errForward
 			switch {
