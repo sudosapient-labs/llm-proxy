@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -1498,6 +1499,8 @@ func jitteredCooldownWait(wait, maxWait time.Duration) time.Duration {
 }
 
 func waitForCooldown(ctx context.Context, wait, maxWait time.Duration) error {
+	finishWait := observability.RetryWait(ctx)
+	defer finishWait()
 	if wait <= 0 {
 		return nil
 	}

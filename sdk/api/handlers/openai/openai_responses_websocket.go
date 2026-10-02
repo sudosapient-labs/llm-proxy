@@ -16,6 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/observability"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -689,6 +691,9 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		codexDuplexStream.Store(false)
 		pinnedAuthAttempted := false
 		cliCtx, cliCancel := h.GetContextWithCancel(h, c, executionParent)
+		cliCtx, turnTrace := observability.Begin(cliCtx, c.FullPath(), "WS", logging.GetRequestID(c.Request.Context()), c.GetHeader("sentry-trace"))
+		observability.ConfigureRequest(cliCtx, modelName, true)
+		logging.SetSentryRequestContext(c, cliCtx)
 		cliCtx = cliproxyexecutor.WithDownstreamWebsocket(cliCtx)
 		if duplexInput != nil {
 			cliCtx = cliproxyexecutor.WithWebsocketInput(cliCtx, duplexInput)
@@ -758,6 +763,18 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				suppressError:            replayPinnedAuthFailure,
 			},
 		)
+		turnStatus := http.StatusOK
+		turnCancelled := false
+		if errForward != nil {
+			turnCancelled = errors.Is(errForward, websocket.ErrCloseSent) || isWebsocketConnectionClosedError(errForward)
+			observability.Outcome(cliCtx, errForward, 0)
+			turnStatus = http.StatusInternalServerError
+		} else if forwardErrMsg != nil {
+			observability.Outcome(cliCtx, forwardErrMsg.Error, forwardErrMsg.StatusCode)
+			turnStatus = forwardErrMsg.StatusCode
+		}
+		turnTrace.Finish(turnStatus, turnCancelled)
+		logging.SetSentryRequestContext(c, nil)
 		if errForward != nil {
 			wsTerminateErr = errForward
 			switch {
