@@ -10,6 +10,9 @@ type SDKConfig = internalconfig.SDKConfig
 
 type Config = internalconfig.Config
 
+type QuotaForecastConfig = internalconfig.QuotaForecastConfig
+type QuotaForecastAccount = internalconfig.QuotaForecastAccount
+
 type ClientConfig = internalconfig.ClientConfig
 type CodexClientConfig = internalconfig.CodexClientConfig
 type StreamingConfig = internalconfig.StreamingConfig
