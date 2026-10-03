@@ -100,6 +100,62 @@ func TestJournalRejectsUnsafeFilesAndOversizeRecords(t *testing.T) {
 	}
 }
 
+func TestJournalAppendAfterInterruptedWriteRecoversNewObservation(t *testing.T) {
+	j := journal{path: filepath.Join(t.TempDir(), "observations.jsonl"), maxBytes: 3000, files: 2}
+	if err := j.append(journalRecord(epoch, .2)); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(j.path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString(`{"interrupted":`); err != nil {
+		t.Fatal(err)
+	}
+	closeJournalFile(f)
+	latest := epoch.Add(time.Minute)
+	if err = j.append(journalRecord(latest, .3)); err != nil {
+		t.Fatal(err)
+	}
+	seeds, err := j.restore("synthetic-pool", latest)
+	if err != nil || len(seeds) != 2 {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !seeds[1].Accounts[0].ObservedAt.Equal(latest) {
+		t.Fatal("interrupted tail swallowed the next observation")
+	}
+}
+
+func TestJournalReloadEnforcesSmallerBoundsAndPrivateBackups(t *testing.T) {
+	j := journal{path: filepath.Join(t.TempDir(), "observations.jsonl"), maxBytes: 3000, files: 3}
+	for _, index := range []int{0, 1} {
+		if err := os.WriteFile(j.file(index), make([]byte, 4000), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(j.file(2), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(j.file(2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.append(journalRecord(epoch, .2)); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < j.files; index++ {
+		info, err := os.Stat(j.file(index))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || info.Size() > j.maxBytes || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+			t.Fatalf("reload retained oversized or public history: %v, %v", info, err)
+		}
+	}
+	if seeds, err := j.restore("synthetic-pool", epoch); err != nil || len(seeds) != 2 {
+		t.Fatalf("oversized old journal prevented new baseline restoration: %v", err)
+	}
+}
+
 func TestControllerRestoresOnlyMatchingCredentialPool(t *testing.T) {
 	cfg, m, clock := testConfig(), newTestManager(), &testClock{}
 	path := filepath.Join(t.TempDir(), "observations.jsonl")

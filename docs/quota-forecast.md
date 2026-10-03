@@ -84,6 +84,8 @@ reports `enabled`, `mode`, collection state/source/observation timestamps,
 `journal_error`, and a report with separate `measured` and `assumptions` fields.
 Recommendations include plain-language reasons and unmet-demand comparisons
 when the counterfactual is permitted. No routes are added under deprecated v0.
+Simulation bodies must be a single JSON object of at most 8 KiB. Malformed
+aliases or payloads return HTTP 400 without evaluating the scenario.
 
 ## Private persistence and recovery
 
@@ -107,7 +109,9 @@ retained files. A one-way pool key prevents reuse when credential mappings or
 the model change. Corrupt records are ignored; unreadable/oversize journals
 report failed restoration and require a new baseline. Repeated readings do not
 manufacture history, and restored stale readings remain stale. Rotation bounds
-size rather than age; this is local JSONL storage, not a durable database.
+size rather than age; lowering the size bound discards oversized retained files
+on the next write. Appends separate interrupted trailing records so subsequent
+observations remain recoverable. This is local JSONL storage, not a durable database.
 
 ## Later deployment (not performed by this change)
 

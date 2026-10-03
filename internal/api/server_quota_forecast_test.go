@@ -49,8 +49,19 @@ func TestQuotaForecastRoutesRequireManagementAuthAndUseCachedSource(t *testing.T
 	if w := request(http.MethodPost, endpoint+"/simulate", `{"session_id":"private-session","pinned":"B"}`, true); w.Code != 200 || strings.Contains(w.Body.String(), "private-session") {
 		t.Fatalf("simulation failed or leaked session: %d", w.Code)
 	}
-	if w := request(http.MethodPost, endpoint+"/simulate", `{"session_id":"`+strings.Repeat("x", 9000)+`"}`, true); w.Code != 400 {
-		t.Fatal("oversized request accepted")
+	for _, body := range []string{
+		`{"session_id":"` + strings.Repeat("x", 9000) + `"}`,
+		`{"session_id":"` + strings.Repeat("x", 1025) + `"}`,
+		`{"pinned":"` + strings.Repeat("A", 33) + `"}`,
+		`{"pinned":"invalid alias"}`,
+		`{"pinned":"1"}`,
+		`{} {}`,
+		`{}` + strings.Repeat(" ", 8192),
+		`null`,
+	} {
+		if w := request(http.MethodPost, endpoint+"/simulate", body, true); w.Code != http.StatusBadRequest {
+			t.Errorf("invalid simulation request accepted: %d (body length %d)", w.Code, len(body))
+		}
 	}
 	if calls != 2 {
 		t.Fatal("invalid request invoked observer")

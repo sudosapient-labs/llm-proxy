@@ -57,14 +57,31 @@ func (j journal) append(r record) error {
 			return errors.New("quota forecast journal retention cleanup failed")
 		}
 	}
+	// Apply privacy and size bounds to every retained file, including backups
+	// created under older settings. Oversize history cannot be restored.
+	for index := 0; index < j.files; index++ {
+		path := j.file(index)
+		info, errStat := os.Lstat(path)
+		if os.IsNotExist(errStat) {
+			continue
+		}
+		if errStat != nil || !info.Mode().IsRegular() {
+			return errors.New("quota forecast journal must be a regular file")
+		}
+		if info.Size() > j.maxBytes {
+			if errRemove := os.Remove(path); errRemove != nil {
+				return errors.New("quota forecast journal retention cleanup failed")
+			}
+		} else if errChmod := os.Chmod(path, 0600); errChmod != nil {
+			return errors.New("quota forecast journal permissions failed")
+		}
+	}
 	if info, errStat := os.Lstat(j.path); errStat == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("quota forecast journal must be a regular file")
 		}
-		if errChmod := os.Chmod(j.path, 0600); errChmod != nil {
-			return errors.New("quota forecast journal permissions failed")
-		}
-		if info.Size()+int64(len(data)) > j.maxBytes {
+		// Reserve one byte to separate a possible interrupted trailing record.
+		if info.Size()+int64(len(data))+1 > j.maxBytes {
 			if errRemove := os.Remove(j.file(j.files - 1)); errRemove != nil && !os.IsNotExist(errRemove) {
 				return errors.New("quota forecast journal rotation failed")
 			}
@@ -77,13 +94,26 @@ func (j journal) append(r record) error {
 	} else if !os.IsNotExist(errStat) {
 		return errors.New("quota forecast journal unavailable")
 	}
-	f, errOpen := os.OpenFile(j.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, errOpen := os.OpenFile(j.path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
 	if errOpen != nil {
 		return errors.New("quota forecast journal unavailable")
 	}
 	defer closeJournalFile(f)
 	if errChmod := f.Chmod(0600); errChmod != nil {
 		return errors.New("quota forecast journal permissions failed")
+	}
+	info, errStat := f.Stat()
+	if errStat != nil {
+		return errors.New("quota forecast journal unavailable")
+	}
+	if info.Size() > 0 {
+		var tail [1]byte
+		if _, errRead := f.ReadAt(tail[:], info.Size()-1); errRead != nil {
+			return errors.New("quota forecast journal unavailable")
+		}
+		if tail[0] != '\n' {
+			data = append([]byte{'\n'}, data...)
+		}
 	}
 	if _, errWrite := f.Write(data); errWrite != nil {
 		return errors.New("quota forecast journal write failed")
@@ -104,6 +134,9 @@ func (j journal) restore(pool string, now time.Time) ([]quotaforecast.Sample, er
 		}
 		if errStat != nil || !info.Mode().IsRegular() || info.Size() > j.maxBytes {
 			return nil, errors.New("quota forecast journal cannot be restored")
+		}
+		if errChmod := os.Chmod(path, 0600); errChmod != nil {
+			return nil, errors.New("quota forecast journal permissions failed")
 		}
 		f, errOpen := os.Open(path)
 		if errOpen != nil {

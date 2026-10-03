@@ -1,12 +1,17 @@
 package management
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/quotaobserver"
 )
+
+var quotaSimulationAliasPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,31}$`)
 
 func (h *Handler) SetQuotaForecastSource(source func(string, string) (quotaobserver.Status, error)) {
 	h.mu.Lock()
@@ -21,16 +26,24 @@ func (h *Handler) GetQuotaForecast(c *gin.Context) {
 // SimulateQuotaForecast reads cached quota and affinity; it cannot send upstream
 // requests, activate credentials, select an auth, or mutate actual bindings.
 func (h *Handler) SimulateQuotaForecast(c *gin.Context) {
-	var request struct {
+	var request *struct {
 		SessionID string `json:"session_id"`
 		Pinned    string `json:"pinned"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
-	if errBind := c.ShouldBindJSON(&request); errBind != nil || len(request.SessionID) > 1024 || len(request.Pinned) > 32 {
+	// Read the complete bounded body so trailing JSON or whitespace cannot
+	// bypass validation after the first object has been decoded.
+	data, errRead := io.ReadAll(c.Request.Body)
+	if errRead != nil || json.Unmarshal(data, &request) != nil || request == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid quota simulation request"})
 		return
 	}
-	h.quotaForecastResponse(c, strings.TrimSpace(request.SessionID), strings.TrimSpace(request.Pinned))
+	pinned := strings.TrimSpace(request.Pinned)
+	if len(request.SessionID) > 1024 || len(request.Pinned) > 32 || (pinned != "" && !quotaSimulationAliasPattern.MatchString(pinned)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid quota simulation request"})
+		return
+	}
+	h.quotaForecastResponse(c, strings.TrimSpace(request.SessionID), pinned)
 }
 
 func (h *Handler) quotaForecastResponse(c *gin.Context, sessionID, pinned string) {
